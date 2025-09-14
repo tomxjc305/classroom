@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>抽取幸运星｜</title>
+<style>
+  :root{--ui:#21e0c0;}
+  html,body{height:100%;margin:0;background:#02040a;color:#b7c4c9;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial;}
+  .app{height:100%;display:grid;grid-template-rows:auto 1fr auto}
+  header{padding:.75rem 1rem;background:#0b0f16;border-bottom:1px solid #16202a;letter-spacing:.08em}
+  header b{color:var(--ui)}
+  #stage{position:relative;overflow:hidden;}
+  #stage canvas{display:block}
+  .stars{position:absolute;inset:0;pointer-events:none;background:
+     radial-gradient(1200px 600px at 80% 10%,rgba(33,224,192,.06),transparent 65%),
+     radial-gradient(1000px 600px at 10% 70%,rgba(33,224,192,.05),transparent 60%);}
+  footer{display:flex;gap:.75rem;align-items:center;justify-content:center;padding:.75rem;background:#0b0f16;border-top:1px solid #16202a}
+  button,input,select{border:1px solid #22303a;background:#0f1620;color:#d8e1e7;border-radius:.5rem;padding:.5rem .9rem;font-size:14px}
+  button:hover{border-color:#2f4452}
+  button.primary{background:#122a25;border-color:#1e4a42;color:#9ff0df}
+  button.draw{background:#2a1a12;border-color:#42341e;color:#f0d89f}
+  button.import{background:#1a1a2a;border-color:#342e42;color:#d0c0f0}
+  .badge{display:inline-block;padding:.2rem .5rem;border:1px solid #1e4a42;border-radius:.4rem;color:#9ff0df;margin-left:.4rem}
+  .tip{opacity:.75;font-size:12px;margin-left:.35rem}
+  .import-section{display:flex;align-items:center;gap:.5rem}
+  #fileInput{display:none}
+  .import-status{font-size:12px;color:#9ff0df;margin-left:.5rem}
+  .speech-toggle{display:flex;align-items:center;gap:.3rem;font-size:12px}
+  .speech-toggle input[type="checkbox"]{transform:scale(0.8)}
+  .result{background:#0f1620;border:1px solid #22303a;border-radius:.5rem;padding:.5rem;margin-top:.5rem;display:none}
+  .result.show{display:block}
+  .result-names{color:#9ff0df;font-weight:600;margin-top:.3rem}
+  
+  .overlay{position:fixed;inset:0;background:rgba(2,4,10,0.95);backdrop-filter:blur(8px);z-index:1000;display:none;align-items:center;justify-content:center}
+  .overlay.show{display:flex}
+  .winner-card{background:linear-gradient(135deg,#122a25,#0e2623);border:2px solid var(--ui);border-radius:1rem;padding:3rem;text-align:center;max-width:80vw;max-height:80vh;overflow-y:auto;position:relative}
+  .winner-title{font-size:2.5rem;color:var(--ui);margin-bottom:1.5rem;text-shadow:0 0 20px rgba(33,224,192,0.5)}
+  .winner-list{display:flex;flex-wrap:wrap;gap:1rem;justify-content:center;margin:2rem 0}
+  .winner-item{background:rgba(33,224,192,0.1);border:1px solid var(--ui);border-radius:.8rem;padding:1.5rem 2rem;font-size:1.8rem;color:#fff;text-shadow:0 0 10px rgba(33,224,192,0.3);transform:scale(0);animation:popIn 0.6s cubic-bezier(0.68,-0.55,0.265,1.55) forwards}
+  .winner-item:nth-child(1){animation-delay:0.2s}
+  .winner-item:nth-child(2){animation-delay:0.4s}
+  .winner-item:nth-child(3){animation-delay:0.6s}
+  .winner-item:nth-child(4){animation-delay:0.8s}
+  .winner-item:nth-child(5){animation-delay:1.0s}
+  .close-btn{position:absolute;top:1rem;right:1rem;background:none;border:2px solid #666;color:#999;border-radius:50%;width:3rem;height:3rem;font-size:1.5rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .close-btn:hover{border-color:var(--ui);color:var(--ui)}
+  .confetti{position:absolute;width:10px;height:10px;background:var(--ui);animation:confetti 3s linear infinite}
+  
+  @keyframes popIn{
+    0%{transform:scale(0) rotate(180deg);opacity:0}
+    50%{transform:scale(1.1) rotate(0deg);opacity:0.8}
+    100%{transform:scale(1) rotate(0deg);opacity:1}
+  }
+  
+  @keyframes confetti{
+    0%{transform:translateY(-100vh) rotate(0deg);opacity:1}
+    100%{transform:translateY(100vh) rotate(360deg);opacity:0}
+  }
+  
+  a{color:#9ff0df;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <b>抽取幸运星</b>
+    
+  </header>
+
+  <div id="stage">
+    <!-- 星空叠层（纯 CSS 光晕），Three.js 画布会插在下面 -->
+    <div class="stars"></div>
+  </div>
+
+  <footer>
+    <button id="btnStart" class="primary">开始</button>
+    <button id="btnStop">停止</button>
+    <button id="btnReset">重置</button>
+    <label>球体数量
+      <input id="count" type="number" min="12" max="500" value="120" style="width:6rem" />
+    </label>
+    <button id="btnApply">应用</button>
+    <label>点名数量
+      <select id="drawCount">
+        <option value="1">1人</option>
+        <option value="2">2人</option>
+        <option value="3">3人</option>
+        <option value="4">4人</option>
+        <option value="5">5人</option>
+      </select>
+    </label>
+    <button id="btnDraw" class="draw">抽取</button>
+    
+    <div class="import-section">
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" />
+      <button id="btnImport" class="import">导入Excel</button>
+      <span id="importStatus" class="import-status"></span>
+    </div>
+    
+    <label class="speech-toggle">
+      <input type="checkbox" id="speechEnabled" checked />
+      语音播报
+    </label>
+    
+    <span class="tip">提示：双击画面可暂停/继续拖拽旋转</span>
+  </footer>
+  
+  <div id="result" class="result">
+    <div>🎯 抽取结果：</div>
+    <div id="resultNames" class="result-names"></div>
+  </div>
+</div>
+
+<!-- 全屏获奖者展示层 -->
+<div id="overlay" class="overlay">
+  <div class="winner-card">
+    <button id="closeBtn" class="close-btn">×</button>
+    <div class="winner-title">🎉 幸运星</div>
+    <div id="winnerList" class="winner-list"></div>
+  </div>
+</div>
+
+<!-- Three.js（CDN）-->
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<!-- SheetJS 用于解析Excel文件 -->
+<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<script>
+/** ============ 数据（支持Excel导入覆盖） ============ */
+let baseNames = [
+  "刘思琪","王宇航","张晨曦","李若曦","赵一鸣","陈嘉宁","周梓萱","吴俊豪","郑佳怡",
+  "孙子墨","马若涵","杨浩然","朱子瑜","黄梓轩","胡一诺","郭泽楷","何雅婷","高嘉禾",
+  "林子涵","罗锦程","宋嘉乐","唐语桐","冯思源","韩亦晨","谢博文","曹晓月","邹天佑",
+  "彭诗语","程亦凡","任子睿","钟意宁","蒋承泽","袁清妍","秦嘉言","金子琪","薛文轩",
+  "邢沐阳","黎若妍","陆昊宇","黎可欣","白亦霖","滕沐辰","于可欣","贺明远","文铭轩",
+];
+
+/** ============ 基础场景 ============ */
+let scene, camera, renderer, group, animating = true, spin = 0.35, dragging = false;
+const stage = document.getElementById('stage');
+
+init();
+makeSphere(120);           // 默认 120 个
+animate();
+
+function init(){
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05070d);
+
+  const w = stage.clientWidth || window.innerWidth;
+  const h = stage.clientHeight || (window.innerHeight - 120);
+  camera = new THREE.PerspectiveCamera(55, w/h, 0.1, 2000);
+  camera.position.set(0, 0, 380);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference:'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(w, h);
+  stage.prepend(renderer.domElement);
+
+  // 柔光环境
+  const amb = new THREE.AmbientLight(0x95fff0, 0.35);
+  scene.add(amb);
+  const dir = new THREE.DirectionalLight(0x71ffe8, 0.4);
+  dir.position.set(2,2,3);
+  scene.add(dir);
+
+  // 点星空
+  const starGeo = new THREE.BufferGeometry();
+  const starCnt = 1200, starPos = new Float32Array(starCnt*3);
+  for(let i=0;i<starCnt;i++){
+    starPos[i*3+0] = (Math.random()-0.5)*2000;
+    starPos[i*3+1] = (Math.random()-0.5)*2000;
+    starPos[i*3+2] = (Math.random()-0.5)*2000;
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos,3));
+  const starMat = new THREE.PointsMaterial({ color:0x89efff, size:1, sizeAttenuation:true, transparent:true, opacity:.7 });
+  const stars = new THREE.Points(starGeo, starMat);
+  scene.add(stars);
+
+  // 鼠标拖拽旋转
+  let sx=0, sy=0;
+  stage.addEventListener('pointerdown', e=>{ dragging=true; sx=e.clientX; sy=e.clientY; });
+  window.addEventListener('pointerup', ()=> dragging=false );
+  window.addEventListener('pointermove', e=>{
+    if(!dragging || !group) return;
+    const dx = (e.clientX - sx) * 0.003;
+    const dy = (e.clientY - sy) * 0.003;
+    group.rotation.y += dx;
+    group.rotation.x += dy;
+    sx = e.clientX; sy = e.clientY;
+  });
+  stage.addEventListener('dblclick', ()=> animating = !animating );
+  window.addEventListener('resize', onResize);
+}
+
+function onResize(){
+  const w = stage.clientWidth || window.innerWidth;
+  const h = stage.clientHeight || (window.innerHeight - 120);
+  camera.aspect = w/h; camera.updateProjectionMatrix();
+  renderer.setSize(w,h);
+}
+
+/** ============ 生成名字精灵贴图 ============ */
+function makeLabelTexture(text, size=128){
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+
+  // 发光效果
+  ctx.shadowColor = 'rgba(33,224,192,0.75)';
+  ctx.shadowBlur = 18;
+
+  // 小熊图案 - 放在上方
+  ctx.font = '72px "Apple Color Emoji","Segoe UI Emoji"';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🧸', size/2, size/2 - 20);
+
+  // 名字文字 - 放在下方
+  ctx.font = '600 24px "Microsoft YaHei", "Noto Sans SC", system-ui';
+  ctx.fillStyle = '#9ff0df';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, size/2, size/2 + 25);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy?.() || 1;
+  return tex;
+}
+
+/** ============ 斐波那契球面分布 + Sprite朝向相机 ============ */
+function makeSphere(count=120){
+  if(group){ scene.remove(group); group.traverse(o=>o.material?.map?.dispose?.()); group.clear(); }
+  group = new THREE.Group();
+  scene.add(group);
+
+  const R = 140;
+  const names = fillNames(count);
+  const phi = Math.PI * (3 - Math.sqrt(5)); // golden angle
+
+  for(let i=0;i<count;i++){
+    const y = 1 - (i / (count - 1)) * 2; // y from 1 to -1
+    const radius = Math.sqrt(1 - y * y);
+    const theta = phi * i;
+
+    const x = Math.cos(theta) * radius;
+    const z = Math.sin(theta) * radius;
+
+    const tex = makeLabelTexture(names[i % names.length]);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.set(x*R, y*R, z*R);
+    sprite.scale.set(44, 44, 44); // 头像大小
+    group.add(sprite);
+  }
+  // 初始慢速自转
+  group.rotation.y = Math.random()*Math.PI*2;
+  group.rotation.x = (Math.random()*.3)-.15;
+}
+
+function fillNames(n){
+  const out = [];
+  while(out.length < n){
+    out.push(...shuffle([...baseNames]));
+  }
+  return out.slice(0,n);
+}
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]] } return a; }
+
+/** ============ 动画循环 ============ */
+function animate(){
+  requestAnimationFrame(animate);
+  if(group && animating){
+    group.rotation.y += spin * 0.1;   // 自转 (提高50%速度)
+  }
+  renderer.render(scene, camera);
+}
+
+/** ============ UI 交互 ============ */
+const btnStart = document.getElementById('btnStart');
+const btnStop  = document.getElementById('btnStop');
+const btnReset = document.getElementById('btnReset');
+const btnApply = document.getElementById('btnApply');
+const btnDraw  = document.getElementById('btnDraw');
+const btnImport = document.getElementById('btnImport');
+const fileInput = document.getElementById('fileInput');
+const importStatus = document.getElementById('importStatus');
+const speechEnabled = document.getElementById('speechEnabled');
+const countInp = document.getElementById('count');
+const drawCountSel = document.getElementById('drawCount');
+const resultDiv = document.getElementById('result');
+const resultNames = document.getElementById('resultNames');
+const overlay = document.getElementById('overlay');
+const winnerList = document.getElementById('winnerList');
+const closeBtn = document.getElementById('closeBtn');
+
+btnStart.onclick = ()=>{ animating = true; spin = Math.min(1.2, Math.max(.1, spin)); };
+btnStop.onclick  = ()=>{ animating = false; };
+btnReset.onclick = ()=>{
+  spin = 0.35;
+  if(group){ group.rotation.set( (Math.random()*.3)-.15, Math.random()*Math.PI*2, 0 ); }
+  animating = true;
+  resultDiv.classList.remove('show');
+  overlay.classList.remove('show');
+};
+btnApply.onclick = ()=>{
+  const n = Math.max(12, Math.min(500, parseInt(countInp.value || "120", 10)));
+  makeSphere(n);
+  resultDiv.classList.remove('show');
+  overlay.classList.remove('show');
+};
+
+btnDraw.onclick = ()=>{
+  const drawCount = parseInt(drawCountSel.value, 10);
+  drawLuckyNames(drawCount);
+};
+
+// 关闭全屏展示
+closeBtn.onclick = ()=>{
+  overlay.classList.remove('show');
+};
+
+// 点击背景关闭
+overlay.onclick = (e)=>{
+  if(e.target === overlay) {
+    overlay.classList.remove('show');
+  }
+};
+
+// Excel导入功能
+btnImport.onclick = ()=>{
+  fileInput.click();
+};
+
+fileInput.onchange = (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  
+  importStatus.textContent = '正在解析...';
+  importStatus.style.color = '#f0d89f';
+  
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    try {
+      const data = new Uint8Array(event.target.result);
+      const workbook = XLSX.read(data, {type: 'array'});
+      
+      // 获取第一个工作表
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
+      
+      // 提取所有非空的文本数据作为名字
+      const names = [];
+      jsonData.forEach(row => {
+        row.forEach(cell => {
+          if(cell && typeof cell === 'string' && cell.trim()) {
+            names.push(cell.trim());
+          }
+        });
+      });
+      
+      if(names.length === 0) {
+        throw new Error('未找到有效的名字数据');
+      }
+      
+      // 覆盖原有数据
+      baseNames = names;
+      
+      // 重新生成球体使用新数据
+      const currentCount = group ? group.children.length : 120;
+      makeSphere(currentCount);
+      
+      importStatus.textContent = `已导入${names.length}个名字`;
+      importStatus.style.color = '#9ff0df';
+      
+      // 3秒后清除状态提示
+      setTimeout(() => {
+        importStatus.textContent = '';
+      }, 3000);
+      
+    } catch (error) {
+      importStatus.textContent = `导入失败: ${error.message}`;
+      importStatus.style.color = '#ff6b6b';
+      
+      setTimeout(() => {
+        importStatus.textContent = '';
+      }, 5000);
+    }
+  };
+  
+  reader.readAsArrayBuffer(file);
+  
+  // 清空文件选择，允许重复选择同一文件
+  e.target.value = '';
+};
+
+/** ============ 抽取幸运名字 ============ */
+function drawLuckyNames(count) {
+  if (!group || !group.children.length) {
+    alert('请先生成球体！');
+    return;
+  }
+  
+  // 停止动画便于观看结果
+  animating = false;
+  
+  // 获取当前球体上的所有名字
+  const allNames = [];
+  const currentNames = fillNames(group.children.length);
+  
+  // 从当前显示的名字中随机抽取
+  const shuffled = shuffle([...currentNames]);
+  const selected = shuffled.slice(0, count);
+  
+  // 高亮显示被选中的精灵
+  highlightSelected(selected);
+  
+  // 显示结果
+  resultNames.textContent = selected.join('、');
+  resultDiv.classList.add('show');
+  
+  // 显示全屏获奖者展示
+  showWinnersOverlay(selected);
+  
+  // 语音播报获奖者姓名
+  if(speechEnabled.checked) {
+    speakNames(selected);
+  }
+}
+
+/** ============ 高亮选中的名字 ============ */
+function highlightSelected(selectedNames) {
+  if (!group) return;
+  
+  // 重置所有精灵
+  group.children.forEach(sprite => {
+    sprite.scale.set(44, 44, 44);
+    if (sprite.material && sprite.material.color) {
+      sprite.material.color.setHex(0xffffff);
+    }
+  });
+  
+  // 高亮选中的精灵
+  const currentNames = fillNames(group.children.length);
+  selectedNames.forEach(name => {
+    const index = currentNames.indexOf(name);
+    if (index >= 0 && group.children[index]) {
+      const sprite = group.children[index];
+      sprite.scale.set(66, 66, 66); // 放大
+      if (sprite.material && sprite.material.color) {
+        sprite.material.color.setHex(0xffff00); // 黄色高亮
+      }
+    }
+  });
+}
+
+/** ============ 全屏获奖者展示 ============ */
+function showWinnersOverlay(winners) {
+  // 清空之前的内容
+  winnerList.innerHTML = '';
+  
+  // 为每个获奖者创建卡片
+  winners.forEach((name, index) => {
+    const winnerItem = document.createElement('div');
+    winnerItem.className = 'winner-item';
+    winnerItem.textContent = name;
+    winnerItem.style.animationDelay = `${0.2 + index * 0.2}s`;
+    winnerList.appendChild(winnerItem);
+  });
+  
+  // 显示覆盖层
+  overlay.classList.add('show');
+  
+  // 添加彩带效果
+  createConfetti();
+}
+
+/** ============ 彩带动画效果 ============ */
+function createConfetti() {
+  const colors = ['#21e0c0', '#71ffe8', '#95fff0', '#9ff0df'];
+  
+  for(let i = 0; i < 50; i++) {
+    setTimeout(() => {
+      const confetti = document.createElement('div');
+      confetti.className = 'confetti';
+      confetti.style.left = Math.random() * 100 + 'vw';
+      confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+      confetti.style.animationDuration = (Math.random() * 2 + 2) + 's';
+      confetti.style.animationDelay = Math.random() * 2 + 's';
+      
+      overlay.appendChild(confetti);
+      
+      // 3秒后移除
+      setTimeout(() => {
+        if(confetti.parentNode) {
+          confetti.parentNode.removeChild(confetti);
+        }
+      }, 5000);
+    }, i * 100);
+  }
+}
+
+/** ============ 语音播报功能 ============ */
+function speakNames(names) {
+  if (!window.speechSynthesis) {
+    console.warn('浏览器不支持语音合成API');
+    return;
+  }
+  
+  // 停止所有正在进行的语音
+  speechSynthesis.cancel();
+  
+  // 设置语音参数
+  const createUtterance = (text) => {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'zh-CN';
+    utterance.rate = 0.9;    // 语速稍慢
+    utterance.pitch = 1.1;   // 音调稍高
+    utterance.volume = 0.8;  // 音量
+    return utterance;
+  };
+  
+  if (names.length === 1) {
+    // 单人：直接播报
+    const utterance = createUtterance(`恭喜 ${names[0]}`);
+    speechSynthesis.speak(utterance);
+  } else {
+    // 多人：依次播报，中间停顿2秒
+    let index = 0;
+    
+    const speakNext = () => {
+      if (index >= names.length) return;
+      
+      const name = names[index];
+      const text = index === 0 ? `恭喜 ${name}` : name;
+      const utterance = createUtterance(text);
+      
+      utterance.onend = () => {
+        index++;
+        if (index < names.length) {
+          // 0.5秒后播报下一个
+          setTimeout(speakNext, 500);
+        }
+      };
+      
+      utterance.onerror = () => {
+        console.warn('语音播报出错');
+        index++;
+        if (index < names.length) {
+          setTimeout(speakNext, 1000);
+        }
+      };
+      
+      speechSynthesis.speak(utterance);
+    };
+    
+    speakNext();
+  }
+}
+
+/** ============ 检查语音支持 ============ */
+function checkSpeechSupport() {
+  if (!window.speechSynthesis) {
+    speechEnabled.disabled = true;
+    speechEnabled.checked = false;
+    speechEnabled.parentElement.title = '浏览器不支持语音合成';
+    return false;
+  }
+  return true;
+}
+
+// 页面加载时检查语音支持
+window.addEventListener('load', () => {
+  checkSpeechSupport();
+});
+
+</script>
+</body>
+</html>

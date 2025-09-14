@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>抽取幸运星｜3D旋转球</title>
+<style>
+  :root{--ui:#21e0c0;}
+  html,body{height:100%;margin:0;background:#02040a;color:#b7c4c9;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial;}
+  .app{height:100%;display:grid;grid-template-rows:auto 1fr auto}
+  header{padding:.75rem 1rem;background:#0b0f16;border-bottom:1px solid #16202a;letter-spacing:.08em}
+  header b{color:var(--ui)}
+  #stage{position:relative;overflow:hidden;}
+  #stage canvas{display:block}
+  .stars{position:absolute;inset:0;pointer-events:none;background:
+     radial-gradient(1200px 600px at 80% 10%,rgba(33,224,192,.06),transparent 65%),
+     radial-gradient(1000px 600px at 10% 70%,rgba(33,224,192,.05),transparent 60%);}
+  footer{display:flex;gap:.75rem;align-items:center;justify-content:center;padding:.75rem;background:#0b0f16;border-top:1px solid #16202a}
+  button,input{border:1px solid #22303a;background:#0f1620;color:#d8e1e7;border-radius:.5rem;padding:.5rem .9rem;font-size:14px}
+  button:hover{border-color:#2f4452}
+  button.primary{background:#122a25;border-color:#1e4a42;color:#9ff0df}
+  .badge{display:inline-block;padding:.2rem .5rem;border:1px solid #1e4a42;border-radius:.4rem;color:#9ff0df;margin-left:.4rem}
+  .tip{opacity:.75;font-size:12px;margin-left:.35rem}
+  a{color:#9ff0df;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <b>抽取幸运星</b>
+    <span class="badge">HTML5 · Three.js</span>
+  </header>
+
+  <div id="stage">
+    <!-- 星空叠层（纯 CSS 光晕），Three.js 画布会插在下面 -->
+    <div class="stars"></div>
+  </div>
+
+  <footer>
+    <button id="btnStart" class="primary">开始</button>
+    <button id="btnStop">停止</button>
+    <button id="btnReset">重置</button>
+    <label>数量
+      <input id="count" type="number" min="12" max="500" value="120" style="width:6rem" />
+    </label>
+    <button id="btnApply">应用</button>
+    <span class="tip">提示：双击画面可暂停/继续拖拽旋转</span>
+  </footer>
+</div>
+
+<!-- Three.js（CDN）-->
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+
+<script>
+/** ============ 数据（可替换为你们自己的名单） ============ */
+const baseNames = [
+  "刘思琪","王宇航","张晨曦","李若曦","赵一鸣","陈嘉宁","周梓萱","吴俊豪","郑佳怡",
+  "孙子墨","马若涵","杨浩然","朱子瑜","黄梓轩","胡一诺","郭泽楷","何雅婷","高嘉禾",
+  "林子涵","罗锦程","宋嘉乐","唐语桐","冯思源","韩亦晨","谢博文","曹晓月","邹天佑",
+  "彭诗语","程亦凡","任子睿","钟意宁","蒋承泽","袁清妍","秦嘉言","金子琪","薛文轩",
+  "邢沐阳","黎若妍","陆昊宇","黎可欣","白亦霖","滕沐辰","于可欣","贺明远","文铭轩",
+];
+
+/** ============ 基础场景 ============ */
+let scene, camera, renderer, group, animating = true, spin = 0.35, dragging = false;
+const stage = document.getElementById('stage');
+
+init();
+makeSphere(120);           // 默认 120 个
+animate();
+
+function init(){
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05070d);
+
+  const w = stage.clientWidth || window.innerWidth;
+  const h = stage.clientHeight || (window.innerHeight - 120);
+  camera = new THREE.PerspectiveCamera(55, w/h, 0.1, 2000);
+  camera.position.set(0, 0, 380);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference:'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(w, h);
+  stage.prepend(renderer.domElement);
+
+  // 柔光环境
+  const amb = new THREE.AmbientLight(0x95fff0, 0.35);
+  scene.add(amb);
+  const dir = new THREE.DirectionalLight(0x71ffe8, 0.4);
+  dir.position.set(2,2,3);
+  scene.add(dir);
+
+  // 点星空
+  const starGeo = new THREE.BufferGeometry();
+  const starCnt = 1200, starPos = new Float32Array(starCnt*3);
+  for(let i=0;i<starCnt;i++){
+    starPos[i*3+0] = (Math.random()-0.5)*2000;
+    starPos[i*3+1] = (Math.random()-0.5)*2000;
+    starPos[i*3+2] = (Math.random()-0.5)*2000;
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos,3));
+  const starMat = new THREE.PointsMaterial({ color:0x89efff, size:1, sizeAttenuation:true, transparent:true, opacity:.7 });
+  const stars = new THREE.Points(starGeo, starMat);
+  scene.add(stars);
+
+  // 鼠标拖拽旋转
+  let sx=0, sy=0;
+  stage.addEventListener('pointerdown', e=>{ dragging=true; sx=e.clientX; sy=e.clientY; });
+  window.addEventListener('pointerup', ()=> dragging=false );
+  window.addEventListener('pointermove', e=>{
+    if(!dragging || !group) return;
+    const dx = (e.clientX - sx) * 0.003;
+    const dy = (e.clientY - sy) * 0.003;
+    group.rotation.y += dx;
+    group.rotation.x += dy;
+    sx = e.clientX; sy = e.clientY;
+  });
+  stage.addEventListener('dblclick', ()=> animating = !animating );
+  window.addEventListener('resize', onResize);
+}
+
+function onResize(){
+  const w = stage.clientWidth || window.innerWidth;
+  const h = stage.clientHeight || (window.innerHeight - 120);
+  camera.aspect = w/h; camera.updateProjectionMatrix();
+  renderer.setSize(w,h);
+}
+
+/** ============ 生成名字精灵贴图 ============ */
+function makeLabelTexture(text, size=128){
+  const pad = 12, r = (size/2)-pad;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+
+  // glow
+  ctx.shadowColor = 'rgba(33,224,192,0.75)';
+  ctx.shadowBlur = 18;
+
+  // 圆头像（用首字母/表情占位，你可以替换成图片）
+  ctx.beginPath(); ctx.arc(size/2, size/2-8, r, 0, Math.PI*2); ctx.closePath();
+  const grd = ctx.createRadialGradient(size/2-10,size/2-16,8, size/2,size/2-8,r);
+  grd.addColorStop(0,'#163c3a'); grd.addColorStop(1,'#0e2623');
+  ctx.fillStyle = grd; ctx.fill();
+
+  // 名字
+  ctx.font = '600 28px "Microsoft YaHei", "Noto Sans SC", system-ui';
+  ctx.fillStyle = '#9ff0df';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, size/2, size/2 + r*0.65);
+
+  // 头像里的表情/首字
+  ctx.font = '30px "Apple Color Emoji","Segoe UI Emoji"';
+  ctx.fillText('🧸', size/2, size/2-8);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy?.() || 1;
+  return tex;
+}
+
+/** ============ 斐波那契球面分布 + Sprite朝向相机 ============ */
+function makeSphere(count=120){
+  if(group){ scene.remove(group); group.traverse(o=>o.material?.map?.dispose?.()); group.clear(); }
+  group = new THREE.Group();
+  scene.add(group);
+
+  const R = 140;
+  const names = fillNames(count);
+  const phi = Math.PI * (3 - Math.sqrt(5)); // golden angle
+
+  for(let i=0;i<count;i++){
+    const y = 1 - (i / (count - 1)) * 2; // y from 1 to -1
+    const radius = Math.sqrt(1 - y * y);
+    const theta = phi * i;
+
+    const x = Math.cos(theta) * radius;
+    const z = Math.sin(theta) * radius;
+
+    const tex = makeLabelTexture(names[i % names.length]);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.set(x*R, y*R, z*R);
+    sprite.scale.set(44, 44, 44); // 头像大小
+    group.add(sprite);
+  }
+  // 初始慢速自转
+  group.rotation.y = Math.random()*Math.PI*2;
+  group.rotation.x = (Math.random()*.3)-.15;
+}
+
+function fillNames(n){
+  const out = [];
+  while(out.length < n){
+    out.push(...shuffle([...baseNames]));
+  }
+  return out.slice(0,n);
+}
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]] } return a; }
+
+/** ============ 动画循环 ============ */
+function animate(){
+  requestAnimationFrame(animate);
+  if(group && animating){
+    group.rotation.y += spin * 0.005;   // 自转
+  }
+  renderer.render(scene, camera);
+}
+
+/** ============ UI 交互 ============ */
+const btnStart = document.getElementById('btnStart');
+const btnStop  = document.getElementById('btnStop');
+const btnReset = document.getElementById('btnReset');
+const btnApply = document.getElementById('btnApply');
+const countInp = document.getElementById('count');
+
+btnStart.onclick = ()=>{ animating = true; spin = Math.min(1.2, Math.max(.1, spin)); };
+btnStop.onclick  = ()=>{ animating = false; };
+btnReset.onclick = ()=>{
+  spin = 0.35;
+  if(group){ group.rotation.set( (Math.random()*.3)-.15, Math.random()*Math.PI*2, 0 ); }
+  animating = true;
+};
+btnApply.onclick = ()=>{
+  const n = Math.max(12, Math.min(500, parseInt(countInp.value || "120", 10)));
+  makeSphere(n);
+};
+
+</script>
+</body>
+</html>
