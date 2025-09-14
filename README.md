@@ -221,6 +221,7 @@ ctx.fillText('⭐', size/2, size/2 - 35); // 星星
 
 - 提交 [GitHub Issue](https://github.com/tomxjc305/classroom/issues)
 - 发送邮件至：tom@cyics.com
+- 微信：tomlikeLego
 
 ---
 
