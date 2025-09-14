@@ -219,8 +219,8 @@ ctx.fillText('⭐', size/2, size/2 - 35); // 星星
 
 如有问题或建议，请通过以下方式联系：
 
-- 提交 [GitHub Issue](https://github.com/your-username/3d-random-selector/issues)
-- 发送邮件至：your-email@example.com
+- 提交 [GitHub Issue](https://github.com/tomxjc305/classroom/issues)
+- 发送邮件至：tom@cyics.com
 
 ---
 
